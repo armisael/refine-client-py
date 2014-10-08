@@ -404,6 +404,10 @@ class RefineProject:
         self.rows_response_factory = RowsResponseFactory(column_index)
         # TODO: implement rest
         return response
+    
+    def get_operations(self):
+        """List out the operations history."""
+        return self.do_json('get-operations', include_engine=False)['entries']
 
     def get_preference(self, name):
         """Returns the (JSON) value of a given preference setting."""
@@ -420,8 +424,11 @@ class RefineProject:
                 return
 
     def apply_operations(self, file_path, wait=True):
-        json_data = open(file_path).read()
-        response_json = self.do_json('apply-operations', {'operations': json_data})
+        json = open(file_path).read()
+        self.apply_operations_json(json, wait)
+
+    def apply_operations_json(self, json, wait=True):
+        response_json = self.do_json('apply-operations', {'operations': json})
         if response_json['code'] == 'pending' and wait:
             self.wait_until_idle()
             return 'ok'
@@ -440,6 +447,14 @@ class RefineProject:
     def delete(self):
         response_json = self.do_json('delete-project', include_engine=False)
         return 'code' in response_json and response_json['code'] == 'ok'
+        
+    def undo_redo(self, op_id):
+        self.server.urlopen(
+            'undo-redo',
+            params={'lastDoneID': op_id},
+            data={'facets': []},
+            project_id=self.project_id
+        )
 
     def compute_facets(self, facets=None):
         """Compute facets as per the project's engine.

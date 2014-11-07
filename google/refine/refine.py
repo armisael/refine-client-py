@@ -369,21 +369,26 @@ class RefineProject:
         return self.server.urlopen(command, project_id=self.project_id,
                                    data=data)
 
-    def do_json(self, command, data=None, include_engine=True):
+    def do_json(self, command, data=None, include_engine=True, fail_silently=False):
         """Issue a command to the server, parse & return decoded JSON."""
-        if include_engine:
-            if data is None:
-                data = {}
-            data['engine'] = self.engine.as_json()
-        response = self.server.urlopen_json(command,
-                                            project_id=self.project_id,
-                                            data=data)
-        if 'historyEntry' in response:
-            # **response['historyEntry'] won't work as keys are unicode :-/
-            he = response['historyEntry']
-            self.history_entry = history.HistoryEntry(he['id'], he['time'],
-                                                      he['description'])
-        return response
+        try:
+            if include_engine:
+                if data is None:
+                    data = {}
+                data['engine'] = self.engine.as_json()
+            response = self.server.urlopen_json(command,
+                                                project_id=self.project_id,
+                                                data=data)
+            if 'historyEntry' in response:
+                # **response['historyEntry'] won't work as keys are unicode :-/
+                he = response['historyEntry']
+                self.history_entry = history.HistoryEntry(he['id'], he['time'],
+                                                          he['description'])
+            return response
+        except Exception, e:
+            if fail_silently:
+                return None
+            raise
 
     def get_models(self):
         """Fill out column metadata.
@@ -416,9 +421,15 @@ class RefineProject:
         return json.loads(response['value'])
 
     def wait_until_idle(self, polling_delay=0.5):
+        failures = 0
         while True:
-            response = self.do_json('get-processes', include_engine=False)
-            if 'processes' in response and len(response['processes']) > 0:
+            fail_silently = failures < 10
+            response = self.do_json('get-processes', include_engine=False, fail_silently=fail_silently)
+            if response is None:  # failed for some reason, probably a timeout
+                failures += 1
+                time.sleep(polling_delay)
+            elif 'processes' in response and len(response['processes']) > 0:
+                failures = 0
                 time.sleep(polling_delay)
             else:
                 return
